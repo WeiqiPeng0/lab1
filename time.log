@@ -13,15 +13,13 @@ Date  Started  Spent Work completed
 
 ACTUAL time spent: 30 hours
 
-I discussed my solution with: Zhiyu Liang, Haipeng Li
+I discussed my solution with: Zhiyu Liang, Haipeng Li, Shuao Zhang
 
 
-Debugging the graph construction was difficult because the size of the
-graph made it impossible to check by hand.  Using asserts helped
-tremendously, as did counting the incoming and outgoing edges for
-each vertex.  The other major problem was my use of two different variables
-in the same function called _score and score.  The last bug ended up being
-using one in place of the other; I now realize the danger of having two
-variables with names varying only in punctuation -- since they both sound
-the same when reading the code back in my head it was not obvious when
-I was using the wrong one.
+The first obstacle I mete is understanding the structure of the whole project. It is rather abstract to think
+the video recommendation service as a independent service. I spent some at at this before starting the 
+assignment. I looked at several examples on the gRPC official tutorial and ends up understand the service
+better. Debugginig is of course difficult because we are only provided two simple examples. It is challenging
+to come up with ways to test fallback, retries etc. Another point is to implement the Mock server. I am blind
+at how it was used intially. After reading a post in Ed I know that the mock server is actually a kind of dependency
+injection. I am glad that I can learn such practical design skills.  
