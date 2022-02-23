@@ -1,10 +1,39 @@
 
 #A1#
 Dial() is similar to the connect() socket API.
+They are similar that they both set up a connection from the client side. 
 
 #A2#
+Dial() would fail when there is connection error (ex. the server is not available) or that there is no permission/credentials, or the addr is incorrect.
+I think the Unavailable code is suitable for most cases (ex. connection problem). Unavailable code is mostly used to denote that the service is currently unavailable. In practical
+design, we might want to retry the connection request or use a backoff.
+
+There are also other codes that match specific situations. For example, we tend to use PermissionDenied code when the caller has insufficient credentials.  If the address is wrong,
+we might return a NotFound code. In addition, if the connection request times out, we shall return DeadlineExceeded.
+
+#A3#
+The system calls used here include read() and write(). read() can raise an error whenever the filedescriptor or address is invalid. In addition, if the data field is restricted then an error
+should happen. write() can raise an error when the syscall itself is interrupted or the address is invalid.  
+
+Even if the network calls are successfully executed, the getUser() RPC can still return error. One possible situation is that the context passed into the RPC times out before the 
+call finishes.  
+
+#ExtraCredit1#
 
 
+#A4#
+Using same conn for both VideoService and UserService is undesirable. The two services are on different server address/port. Using the worng address to build up the connection
+shall direct the RPC reqeust to services that are not responsible for the calls. Therefore, the caller cannot get responses. 
+
+
+#A6#
+This user has name Upton8063, their email is dimitribrown@sauer.name, and their profile URL is https://user-service.localhost/profile/202704
+
+[0] Video id=1332, title="The muddy frog's kindness", author=Priscilla Cormier, url=https://video-data.localhost/blob/1332
+[1] Video id=1269, title="quaint near", author=Helga Schowalter, url=https://video-data.localhost/blob/1269
+[2] Video id=1262, title="uptight Crookneck", author=Elwyn Buckridge, url=https://video-data.localhost/blob/1262
+[3] Video id=1061, title="elegant on", author=Jordi Mueller, url=https://video-data.localhost/blob/1061
+[4] Video id=1352, title="The helpless cod's electricity", author=Omari Hane, url=https://video-data.localhost/blob/1352
 
 
 #C1#
