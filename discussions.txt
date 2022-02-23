@@ -35,9 +35,31 @@ This user has name Upton8063, their email is dimitribrown@sauer.name, and their 
 [3] Video id=1061, title="elegant on", author=Jordi Mueller, url=https://video-data.localhost/blob/1061
 [4] Video id=1352, title="The helpless cod's electricity", author=Omari Hane, url=https://video-data.localhost/blob/1352
 
+#A8#
+I think it depends. When we know in advance that queries to UserService or VideoService is sparse, then we can leverage the advantage of concurrency. Concurrency tends to be faster
+in terms of the total runtime of RPC. However, if the RPC queries are intense to the Service, then spawning too many child queries might put pressure on the Service server.
+
+For this project, I did not implement concurrency. Because I observe that serialized queries does not take too much time compared to other parts of the program. More importantly,
+in practical scenarios the UserService and VideoService tend to receive very intense requests. This is especially correct when we have large user base.
+
+#B2#
+Below is part of my stats:
+
+1645509586967491        1458    0       4       0       0       368.94  0.00    0
+1645509587969806        1468    0       4       0       0       369.08  0.00    0
+1645509588971657        1478    0       3       0       0       369.34  0.00    0
+1645509589968159        1488    0       5       0       0       369.89  0.00    0
+1645509590967108        1498    0       3       0       0       369.42  0.00    0
+1645509591963474        1508    0       3       0       0       369.30  0.00    0
+1645509592976992        1518    0       3       0       0       369.92  0.00    0
+1645509593974277        1528    0       3       0       0       369.07  0.00    0
+1645509594971968        1538    0       3       0       0       369.40  0.00    0
+1645509595971505        1548    0       2       0       0       368.67  0.00    0
+1645509596963311        1558    0       3       0       0       367.77  0.00    0
 
 #C1#
-There are certain types of connection errors that should not be retried. For example, when the request is unauthorized (error 401) or the method is not allowed (error 405). Retrying regardless of the types of error is inefficient.
+There are certain types of connection errors that should not be retried. For example, when the request is unauthorized (error 401) or the method is not allowed (error 405). 
+Retrying regardless of those types of error is inefficient because another try won't help for sure.
 
 #C2#
 I would prefer setting a threshold below which we shall deliver the expired response. If the response has been outdated too much, it is inappropriate to display those recommendations to user level. 
@@ -50,5 +72,13 @@ We can somehow increase the RPC timeouts. We can also add more retries after a b
 I might trade-off the RPC timeout time to wait for responses that are slow when the query load is high. Retries can be combined with distributed service providers, so that we send query to another service provider address.
 
 
+#C4#
+Establishment of connection is costly because it requires interaction between the caller and destination. It is known that setting up a TCP connections needs 3 turns between two sides. This is expensive compared to using an
+existing one directly.
+
+To reduce connections, one modification is to open up a connection when the server is built and store the connection in the field of the server instance. Therefore, we can reuse the connection every time the same server instance
+is calling RPCs. 
+
+However, constantly keeping a connection is probably inefficient in terms of load balancing. 
 
 
