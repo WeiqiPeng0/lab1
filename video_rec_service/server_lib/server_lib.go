@@ -23,6 +23,7 @@ import (
     // "math" // Min function
     "sync"
     "time" // for latency
+		"github.com/influxdata/tdigest"
 
     "google.golang.org/grpc/credentials/insecure"
 
@@ -121,6 +122,50 @@ func (server *VideoRecServiceServer) getTrendingVideos() ([]*vpb.VideoInfo, uint
 }
 
 
+func (server *VideoRecServiceServer) getTrendingVideosMock() ([]*vpb.VideoInfo, uint64, error) {
+	cxt, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	videoClient := server.Mock_vclient
+
+	response, err := videoClient.GetTrendingVideos(cxt, &vpb.GetTrendingVideosRequest{})
+	if err != nil {
+		log.Printf("Fail to get trending videos with mock: %v", err)
+		return nil, 0, status.Errorf(codes.Unavailable, "Oops.. GetTrendingVideosMock fails.. %v", err)
+	}
+	vids := response.Videos
+	timeout := response.ExpirationTimeS
+
+	batch_size := server.options.MaxBatchSize
+
+	// get vinfos
+	vinfos := []*vpb.VideoInfo{}
+	k := 0
+	for k < len(vids) {
+		uplim := k + batch_size
+		if uplim > len(vids) {
+			uplim = len(vids)
+		}
+		res1, err1 := videoClient.GetVideo(context.Background(), &vpb.GetVideoRequest{VideoIds: vids[k:uplim]})
+
+		if err1 != nil {
+			// retry
+			res1, err1 = videoClient.GetVideo(context.Background(), &vpb.GetVideoRequest{VideoIds: vids[k:uplim]})
+			if err1 != nil {
+				log.Printf("Fail to GetTendingVideo: %v", err1)
+				return nil, 0, status.Errorf(codes.Unavailable, "Oops.. GetTrendingVideo() Failed!!")
+			}
+
+		}
+		vinfos = append(vinfos, res1.Videos...)
+		k += batch_size
+	}
+	log.Println("Mock Get Trending Videos SUccess!!")
+	return vinfos, timeout, nil
+
+}
+
+
 
 
 
@@ -132,6 +177,28 @@ func (server *VideoRecServiceServer) UpdateTrendingVideos() {
 		vinfos, t, err := server.getTrendingVideos()
 		if err != nil {
 			log.Printf("Fail to GetTendingVideo: %v, Backing off 10 secs...", err)
+			time.Sleep(10 * time.Second) // push back 10 seconds
+			continue
+		}
+		server.Trending_videos.mu.Lock()
+		// log.Printf("Updated Cache for Trending Videos, timeout is %v",t)
+		// log.Printf("The time now is %v",uint64(time.Now().Unix()))
+		timeout = t
+		server.Trending_videos.Vinfos = vinfos
+		server.Trending_videos.mu.Unlock()
+		time.Sleep(time.Duration(timeout - uint64(time.Now().Unix())) * time.Second)
+	}
+}
+
+
+func (server *VideoRecServiceServer) UpdateTrendingVideosMock() {
+
+	timeout := uint64(0)
+
+	for {
+		vinfos, t, err := server.getTrendingVideosMock()
+		if err != nil {
+			log.Printf("Fail to GetTendingVideoMock: %v, Backing off 10 secs...", err)
 			time.Sleep(10 * time.Second) // push back 10 seconds
 			continue
 		}
@@ -161,6 +228,7 @@ type VideoRecServiceServer struct {
 	Trending_videos TrendingVideos
 	Mock_uclient *umc.MockUserServiceClient
 	Mock_vclient *vmc.MockVideoServiceClient
+	td  *tdigest.TDigest
 }
 
 
@@ -179,6 +247,7 @@ func MakeVideoRecServiceServer(options VideoRecServiceOptions) (*VideoRecService
 		Trending_videos: TrendingVideos{ Vinfos: []*vpb.VideoInfo{} },
 		Mock_uclient: nil,
 		Mock_vclient: nil,
+		td: tdigest.NewWithCompression(100),
 	}
 	go s.UpdateTrendingVideos()
 	return s
@@ -211,8 +280,9 @@ func MakeVideoRecServiceServerWithMocks(
 		Trending_videos: TrendingVideos{ Vinfos: []*vpb.VideoInfo{} },
 		Mock_uclient: mockUserServiceClient,
 		Mock_vclient: mockVideoServiceClient,
+		td: tdigest.NewWithCompression(100),
 	}
-	go s.UpdateTrendingVideos()
+	go s.UpdateTrendingVideosMock()
 	return s
 }
 
@@ -390,6 +460,7 @@ func (server *VideoRecServiceServer) GetTopVideos_Mock(req *pb.GetTopVideosReque
 
 	server.mu.Lock()
 	server.Total_active_ -= 1
+	server.td.Add(float64(elapsed), 1)
 	server.Average_latency = (server.Average_latency * float32(server.Total_requests_ - server.Total_error_ - server.Total_active_ - 1) + elapsed) / float32(server.Total_requests_ - server.Total_active_ - server.Total_error_)
 	server.mu.Unlock()
 
@@ -574,6 +645,7 @@ func (server *VideoRecServiceServer) GetTopVideos(ctx context.Context, req *pb.G
 
   	server.mu.Lock()
   	server.Total_active_ -= 1
+		server.td.Add(float64(elapsed), 1)
   	server.Average_latency = (server.Average_latency * float32(server.Total_requests_ - server.Total_error_ - server.Total_active_ - 1) + elapsed) / float32(server.Total_requests_ - server.Total_active_ - server.Total_error_)
   	server.mu.Unlock()
 
@@ -598,6 +670,7 @@ func (server *VideoRecServiceServer) GetStats (ctx context.Context,
 		VideoServiceErrors: server.VideoService_error_,
 		AverageLatencyMs: server.Average_latency,
 		StaleResponses: server.Stale_response_,
+		P99LatencyMs: float32(server.td.Quantile(0.99)),
 	}
 
 	return res, nil

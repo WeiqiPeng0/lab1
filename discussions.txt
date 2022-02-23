@@ -12,18 +12,22 @@ There are also other codes that match specific situations. For example, we tend 
 we might return a NotFound code. In addition, if the connection request times out, we shall return DeadlineExceeded.
 
 #A3#
-The system calls used here include read() and write(). read() can raise an error whenever the filedescriptor or address is invalid. In addition, if the data field is restricted then an error
+The system calls (on the server side) used here include read() and write(). read() can raise an error whenever the filedescriptor or address is invalid. In addition, if the data field is restricted then an error
 should happen. write() can raise an error when the syscall itself is interrupted or the address is invalid.  
+
+In addition, once the connections is built, the client service shall use syscalls such as send(), recv() to send and receive data package. Errors happen when connectionis down. 
 
 Even if the network calls are successfully executed, the getUser() RPC can still return error. One possible situation is that the context passed into the RPC times out before the 
 call finishes.  
 
 #ExtraCredit1#
-
+If the errors happen to be at the server side, it is necessary that the server properly handle the issues and return an error code or back-up solution as reply. The client analyzes the error
+code returned from the remote service and produce error logs. For those error that happen to be at the caller side, errors are usually pre-defined and can be easily detected. For
+instance, handling timeout in the caller is usually a necesary logic to be implemented.
 
 #A4#
 Using same conn for both VideoService and UserService is undesirable. The two services are on different server address/port. Using the worng address to build up the connection
-shall direct the RPC reqeust to services that are not responsible for the calls. Therefore, the caller cannot get responses. 
+shall direct the RPC reqeust to services that are not accountable for the calls and refuse them. Therefore, the caller cannot get valid responses. 
 
 
 #A6#
@@ -37,34 +41,51 @@ This user has name Upton8063, their email is dimitribrown@sauer.name, and their 
 
 #A8#
 I think it depends. When we know in advance that queries to UserService or VideoService is sparse, then we can leverage the advantage of concurrency. Concurrency tends to be faster
-in terms of the total runtime of RPC. However, if the RPC queries are intense to the Service, then spawning too many child queries might put pressure on the Service server.
+in terms of the total overhead of RPC. However, if the RPC queries are intense to the Service, then spawning too many child queries might put pressure on the Service server.
 
-For this project, I did not implement concurrency. Because I observe that serialized queries does not take too much time compared to other parts of the program. More importantly,
-in practical scenarios the UserService and VideoService tend to receive very intense requests. This is especially correct when we have large user base.
+For this project, I did not implement concurrency. Because I observe that serialized queries do not take too much time compared to other parts of the program. More importantly,
+in practical scenarios the UserService and VideoService tend to receive very intense requests. This is in particular correct when we have large user base.
+
+#ExtraCredit 2#
+The strategy is to not exceed the batch size limit in order to get fast response. Optimizations can be made so that two queries can be combined in to one larger query if their sum is within the batch size. This
+way we can reduce total query amounts. However, we have to implement extra logic to integrate the requests, keep track of the caller identities, and properly split and assign the respones. 
+
 
 #B2#
 Below is part of my stats:
 
-1645509586967491        1458    0       4       0       0       368.94  0.00    0
-1645509587969806        1468    0       4       0       0       369.08  0.00    0
-1645509588971657        1478    0       3       0       0       369.34  0.00    0
-1645509589968159        1488    0       5       0       0       369.89  0.00    0
-1645509590967108        1498    0       3       0       0       369.42  0.00    0
-1645509591963474        1508    0       3       0       0       369.30  0.00    0
-1645509592976992        1518    0       3       0       0       369.92  0.00    0
-1645509593974277        1528    0       3       0       0       369.07  0.00    0
-1645509594971968        1538    0       3       0       0       369.40  0.00    0
-1645509595971505        1548    0       2       0       0       368.67  0.00    0
-1645509596963311        1558    0       3       0       0       367.77  0.00    0
+1645602427121969        0       0       0       0       0       0.00    NaN     0
+1645602428116265        0       0       0       0       0       0.00    NaN     0
+1645602429117065        0       0       0       0       0       0.00    NaN     0
+1645602430111030        0       0       0       0       0       0.00    NaN     0
+1645602431122082        0       0       0       0       0       0.00    NaN     0
+1645602432123809        0       0       0       0       0       0.00    NaN     0
+1645602433122860        0       0       0       0       0       0.00    NaN     0
+1645602434120835        0       0       0       0       0       0.00    NaN     0
+1645602435117040        18      0       2       0       0       360.06  528.00  0
+1645602436111200        28      0       1       0       0       307.70  528.00  0
+1645602437123757        38      0       3       0       0       309.94  528.00  0
+1645602438109967        48      0       5       0       0       329.09  528.00  0
+1645602439123589        58      0       3       0       0       353.13  527.60  0
+1645602440109475        68      0       5       0       0       358.25  526.96  0
+1645602441110024        78      0       2       0       0       361.34  525.92  0
+1645602442109686        88      0       4       0       0       360.77  525.28  0
+1645602443123183        99      0       5       0       0       367.34  524.48  0
+1645602444121599        109     0       5       0       0       373.40  523.68  0
+1645602445121542        118     0       3       0       0       378.23  522.80  0
+1645602446118002        128     0       4       0       0       377.79  522.08  0
+
+
 
 #C1#
 There are certain types of connection errors that should not be retried. For example, when the request is unauthorized (error 401) or the method is not allowed (error 405). 
-Retrying regardless of those types of error is inefficient because another try won't help for sure.
+Retrying regardless of those types of error is inefficient because we know apriori another try won't help for sure. 
 
 #C2#
-I would prefer setting a threshold below which we shall deliver the expired response. If the response has been outdated too much, it is inappropriate to display those recommendations to user level. 
+I would prefer setting a threshold below which we shall deliver the expired response. If the response has been outdated too much, it is inappropriate to display those recommendations to a user level. 
 
-The tradeoff is that raising an error might have negative impact on user experience, while stale response won't effect the smoothness of the service, given that the service is able to fully recover soon.
+The tradeoff is that raising an error might have negative impact on user experience, while stale response won't effect the smoothness of the service, provided that the service is able to fully recover soon. 
+The threshold should not be fixed. It could be a soft threshold according to user-oriented settings and feedbacks. For example, ask the user when they create account if they value more on fluency or quality of the service.
 
 #C3#
 We can somehow increase the RPC timeouts. We can also add more retries after a back-off period.
@@ -79,6 +100,6 @@ existing one directly.
 To reduce connections, one modification is to open up a connection when the server is built and store the connection in the field of the server instance. Therefore, we can reuse the connection every time the same server instance
 is calling RPCs. 
 
-However, constantly keeping a connection is probably inefficient in terms of load balancing. 
+However, constantly keeping a connection is probably inefficient if the channel is not used very often. 
 
 
